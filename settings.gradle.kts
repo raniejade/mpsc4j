@@ -10,5 +10,5 @@ plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "0.7.0"
 }
 
-rootProject.name = "mpscj"
-include("lib")
+rootProject.name = "mpscj4j"
+include("mpsc4j")

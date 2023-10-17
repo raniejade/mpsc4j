@@ -5,8 +5,6 @@ import java.util.Optional;
 import java.util.concurrent.LinkedBlockingQueue;
 
 public final class Channels {
-
-
     public static <T> Channel<T> create() {
         return create(Integer.MAX_VALUE);
     }
@@ -20,7 +18,6 @@ public final class Channels {
 
     private Channels() {
     }
-
 
     private record SenderImpl<T>(LinkedBlockingQueue<T> buffer) implements Sender<T> {
         @Override

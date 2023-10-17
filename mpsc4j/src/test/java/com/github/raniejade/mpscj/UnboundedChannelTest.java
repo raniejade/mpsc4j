@@ -5,6 +5,8 @@ package com.github.raniejade.mpscj;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
@@ -57,6 +59,51 @@ class UnboundedChannelTest {
     }
 
     @Test
+    public void nonBlockingSendDifferentVirtualThread() throws Exception {
+        var channel = Channels.<String>create();
+        var semaphore = new Semaphore(0);
+        var thread = Thread.ofVirtual().unstarted(() -> {
+            var sender = channel.sender();
+            sender.send("hello world");
+            semaphore.release();
+        });
+        assertFalse(semaphore.tryAcquire());
+        thread.start();
+        var permitAcquired = semaphore.tryAcquire(100, TimeUnit.MILLISECONDS);
+        assertTrue(permitAcquired);
+        try (var receiver = channel.receiver()) {
+            assertEquals("hello world", receiver.tryReceive().get());
+            assertTrue(receiver.tryReceive().isEmpty());
+        }
+    }
+
+    @Test
+    public void nonBlockingSendMultipleThreads() throws Exception {
+        var channel = Channels.<String>create();
+        var semaphore = new Semaphore(0);
+        var thread1 = new Thread(() -> {
+            var sender = channel.sender();
+            sender.send("hello world");
+            semaphore.release();
+        });
+        var thread2 = new Thread(() -> {
+            var sender = channel.sender();
+            sender.send("hello world from another thread");
+            semaphore.release();
+        });
+        thread1.start();
+        assertTrue(semaphore.tryAcquire(100, TimeUnit.MILLISECONDS));
+        try (var receiver = channel.receiver()) {
+            assertEquals("hello world", receiver.receive());
+        }
+        thread2.start();
+        assertTrue(semaphore.tryAcquire(100, TimeUnit.MILLISECONDS));
+        try (var receiver = channel.receiver()) {
+            assertEquals("hello world from another thread", receiver.receive());
+        }
+    }
+
+    @Test
     public void blockingReceive() throws Exception {
         var channel = Channels.<String>create();
         var executor = Executors.newSingleThreadExecutor();
@@ -74,5 +121,35 @@ class UnboundedChannelTest {
         var permitAcquired = semaphore.tryAcquire(100, TimeUnit.MILLISECONDS);
         assertTrue(permitAcquired);
         assertEquals("hello world", value.get());
+    }
+
+    @Test
+    public void multipleReceive() throws Exception {
+        var channel = Channels.<String>create();
+        var executor = Executors.newSingleThreadExecutor();
+        var semaphore = new Semaphore(0);
+        var returnSemaphore = new Semaphore(0);
+        var value = executor.submit(() -> {
+            try {
+                var list = new ArrayList<String>();
+                semaphore.acquire();
+                try (var receiver = channel.receiver()) {
+                    receiver.forEach(list::add);
+                }
+                return list;
+            } finally {
+                semaphore.release();
+                returnSemaphore.release();
+            }
+        });
+        assertFalse(value.isDone());
+        channel.sender().send("hello");
+        channel.sender().send("world");
+        semaphore.release(1);
+        // wait until the task has returned
+        assertTrue(returnSemaphore.tryAcquire(100, TimeUnit.MILLISECONDS));
+        // send extra data
+        channel.sender().send("foo");
+        assertEquals(List.of("hello", "world"), value.get());
     }
 }

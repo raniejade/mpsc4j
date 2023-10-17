@@ -19,10 +19,9 @@ public class Channel<T> {
     }
 
     public ScopedReceiver<T> receiver() {
-        if (receiverBounded.get()) {
+        if (receiverBounded.get() || !receiverBounded.compareAndSet(false, true)) {
             throw new IllegalStateException("Receiver already bound.");
         }
-        receiverBounded.compareAndSet(false, true);
         return new ScopedReceiver<>() {
             @Override
             public T receive() {
@@ -36,7 +35,11 @@ public class Channel<T> {
 
             @Override
             public void close() {
-                receiverBounded.compareAndSet(true, false);
+                // unlikely, but in-case it does, just throw an exception to signify that it happened.
+                if (!receiverBounded.compareAndSet(true, false)) {
+                    // panic!("should not happen")
+                    throw new IllegalStateException("Failed to close ScopedReceiver.");
+                }
             }
 
             @Override
